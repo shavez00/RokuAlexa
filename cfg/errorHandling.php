@@ -11,7 +11,4 @@
  *
  * @author Administrator_2
  */
-class errorHandling
-{
-    //put your code here
-}
+
