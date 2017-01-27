@@ -1,4 +1,4 @@
-RokuAlexaLambdaSkill
+PHP Roku Alexa Lambda Skill
 ====================
 ## Description
 
