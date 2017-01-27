@@ -6,17 +6,26 @@ class Roku {
     private $rokuUri = NULL;
     private $rokuUriCacheFile = '/cfg/rokuUri.txt';
     private $listofChannelsFile = '/cfg/LIST_OF_CHANNELS.txt';
+    private $rokuCachedSerialNumber = NULL;
+    private $rokuSerialNumberCacheFile = '/cfg/rokuSerialNumber.txt';
     
-    function __construct() {
+    function __construct($serialNumber = NULL) {
         //TODO:  Add use of memcached
+
+        //dealing with multiple Roku on the same LAN. Check the serial number.
+        //get the cached serial number from disk
+        $currentWorkingDirectory = getcwd();
+        $this->rokuCachedSerialNumber = file_get_contents($currentWorkingDirectory . $this->rokuSerialNumberCacheFile);
+        //if no serial number is passed in, then use default serial number
+        if ($serialNumber == NULL) $serialNumber = $this->rokuCachedSerialNumber;
+        
         //fix loop issue and improve error logging
         do {
-            if(!$this->checkCachedUri($this->rokuUriCacheFile)) if(!$this->getRokuUri()) $this->wakeUp();
+            if(!$this->checkCachedRokuInfo($this->rokuUriCacheFile, $serialNumber)) if(!$this->getRokuUri()) $this->wakeUp();
         } while ($this->rokuUri == NULL);
-            //echo $this->rokuUri;
     }
     
-    private function checkCachedUri($rokuUriCacheFile) {
+    private function checkCachedRokuInfo($rokuUriCacheFile, $serialNumber) {
         //get IP address, check cached address on disk then use UPNP to get address
         $success = FALSE;
         $currentWorkingDirectory = getcwd();
@@ -26,13 +35,16 @@ class Roku {
         $ch = curl_init($rokuUri);
         curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 2);
         curl_setopt($ch, CURLOPT_RETURNTRANSFER, TRUE);
-        $success = curl_exec($ch);
+        $response = curl_exec($ch);
         curl_close($ch);
+        
+        if($response) $xml = new SimpleXMLElement($response);
 
         //if CURL returns a valid response then IP address is good for the Roku
         //Since the iP address is good then it should be saved as the URI
-        if($success !== FALSE) {
+        if((string)$xml->device->serialNumber == $serialNumber) {
             $success = TRUE && $this->rokuUri = $rokuUri;
+            file_put_contents($currentWorkingDirectory . $this->rokuSerialNumberCacheFile, $serialNumber);
         } else {
             trigger_error("Attemp to get URI of Roku from file cached on disk failed", E_USER_WARNING);
         }
@@ -51,15 +63,14 @@ class Roku {
         $send_ret = socket_sendto($socket, $msg, strlen($msg), 0, '239.255.255.250', 1900); 
         socket_set_option($socket, SOL_SOCKET, SO_RCVTIMEO, array( 'sec'=>$sockTimout, 'usec'=>'0'));
         $response = array();
-        //for ($i = 0; $i <10; $i++) {
+        for ($i = 0; $i <10; $i++) {
             $buf = null;
             socket_recvfrom($socket, $buf, 1024, MSG_WAITALL, $from, $port);
-            //echo "running";
             if(!is_null($buf)) $response = $this->parseMSearchResponse($buf);
-        //}
+        }
         socket_close($socket);
         if ($response['URI']) {
-            $success = TRUE;
+            //$success = TRUE;
             $currentWorkingDirectory = getcwd();
             file_put_contents($currentWorkingDirectory . $this->rokuUriCacheFile, $response['URI']);
         } else {
@@ -103,21 +114,39 @@ class Roku {
         curl_close($ch);
     }
     
-    public function createListofChannelsTextFile() {
-        $ch = curl_init('http://192.168.128.9:8060/query/apps'); 
+    public function getListofChannels() {
+        $ch = curl_init($this->rokuUri . '/query/apps'); 
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);
+        $result = curl_exec($ch);
+        $list_of_channels = array();
+        $xml = new SimpleXMLElement($result);
+        foreach($xml->children() as $child) {
+            $name = preg_replace("/[.]/u", "", (string)$child->{0});
+            $name = strtolower($name);
+            if($child["type"] == "appl") $list_of_channels[$name] = (int)$child["id"];
+        }
+        header_remove();
+        http_response_code($code);
+        header("Cache-Control: no-transform,public,max-age=300,s-maxage=900");
+        header('Content-Type: application/json');
+        header('Status: 200 OK');
+        print_r(json_encode($list_of_channels));
+    }
+
+    public function getListofChannelsFile() {
+        $ch = curl_init($this->rokuUri . '/query/apps'); 
         curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);
         $result = curl_exec($ch);
         $list_of_channels = NULL;
-        /*$xml = simplexml_load_string($result); 
-        $json = json_encode($xml); 
-        $array = json_decode($json,TRUE);
-        var_dump($json);*/
         $xml = new SimpleXMLElement($result);
         foreach($xml->children() as $child) {
-            $list_of_channels = $list_of_channels . $child ."\n";
+            $name = (string)$child->{0};
+            $name = strtolower($name);
+            if($child["type"] == "appl") $list_of_channels = $list_of_channels . $name . "\n";
         }
         $currentWorkingDirectory = getcwd();
         file_put_contents($currentWorkingDirectory . $this->listofChannelsFile, $list_of_channels);
+        var_dump($list_of_channels);
     }
 }
 
