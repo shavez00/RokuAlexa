@@ -23,10 +23,10 @@ switch ($elements[0]) {
        try { 
             $msg = getallheaders();
             if ($msg['Authorization'] == 'password') { 
-                $roku = new Roku();
+                //need to change from hard coded serial number to dynmically inputed from request
+                $roku = new Roku("YW00A8650087");
                 $url = $roku->$elements[1]($elements[2]);
            } else {
-               // header("Location: http://www.google.com/");
                echo "not authorized";
                die;
             }
@@ -40,18 +40,4 @@ switch ($elements[0]) {
     default:
         include 'index.html';
 }
-
-//var_dump($elements);
-
-/*else switch(array_shift($elements)) // Pop off first item and switch 
-{ 
-    case 'roku': 
-        ShowPicture($elements); // passes rest of parameters to internal function 
-        break; 
-    case 'more': 
-        ... 
-    default: 
-        header('HTTP/1.1 404 Not Found'); 
-        Show404Error(); 
-}*/
 ?>
